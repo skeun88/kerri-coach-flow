@@ -1,4 +1,4 @@
-import { createFileRoute, notFound } from "@tanstack/react-router";
+import { createFileRoute, notFound, redirect } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import {
@@ -23,7 +23,18 @@ const fetchCoach = createServerFn({ method: "GET" })
       .eq("is_public", true)
       .maybeSingle();
 
-    if (!profile) return null;
+    if (!profile) {
+      // Check slug redirect table — slug may have been renamed
+      const { data: redirect } = await supabase
+        .from("coach_slug_redirects")
+        .select("new_slug")
+        .eq("old_slug", slug)
+        .maybeSingle();
+      if (redirect?.new_slug) {
+        return { redirect: redirect.new_slug };
+      }
+      return null;
+    }
 
     const { data: packages } = await supabase
       .from("lesson_packages")
@@ -142,6 +153,9 @@ export const Route = createFileRoute("/coach/$slug")({
   loader: async ({ params }) => {
     const result = await fetchCoach({ data: params.slug });
     if (!result) throw notFound();
+    if ("redirect" in result) {
+      throw redirect({ to: "/coach/$slug", params: { slug: result.redirect }, statusCode: 301 });
+    }
     return result;
   },
   head: ({ loaderData }) => {
